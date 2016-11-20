@@ -1,21 +1,30 @@
 package com.shadow;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.rendering.PDFRenderer;
 
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.PrintWriter;
 
 public class PdfCropper {
   public static void main(String[] argv) throws Exception {
-    File file = new File("test.pdf");
+    final String inputFilename = argv[0];
+    File file = new File(inputFilename);
 
     PDDocument pdfDocument = PDDocument.load(file);
     PDFRenderer pdfRenderer = new PDFRenderer(pdfDocument);
 
-    for (int pageIndex = 0; pageIndex < pdfDocument.getNumberOfPages(); pageIndex++) {
+    PDDocument croppedPdfDocument = new PDDocument();
+
+//    for (int pageIndex = 0; pageIndex < pdfDocument.getNumberOfPages(); pageIndex++) {
+    int onlyPageIndex = 25;
+    for (int pageIndex = onlyPageIndex; pageIndex < onlyPageIndex + 1; pageIndex++) {
       BufferedImage image = pdfRenderer.renderImage(pageIndex);
 
       int width = image.getWidth();
@@ -23,34 +32,72 @@ public class PdfCropper {
 
       int[][] s = getSs(image, width, height);
       int[] sColumn = getSColumn(width, height, s);
-//      int[] sRow = getSRow(width, height, s);
+      int[] sRow = getSRow(width, height, s);
+//      printColors
 
-      String str = "";
-      for (int x = 0; x < width; x++) {
-        str += getSum(sColumn, x, x);
+/*      String str = "";
+      for (int y = 0; y < height; y++) {
+        str += getSum(sRow, y, y);
       }
-      PrintWriter fout = new PrintWriter("out.txt");
+      PrintWriter fout = new PrintWriter("out" + pageIndex + ".txt");
       fout.println(str);
-      fout.close();
+      fout.close();*/
 
-      Pair xs = getXs(width, sColumn);
+      Bounds xs;
+      try {
+        xs = getXs(width, sColumn);
+      } catch (Exception e) {
+        xs = new Bounds(0, width);
+      }
 
-      int miny = 0, maxy = height - 1;
-      System.out.println("minx: " + xs.minv + " miny: " + miny + " maxx: " + xs.maxv + " maxy: " + maxy);
-      image = image.getSubimage(xs.minv, miny, xs.maxv - xs.minv + 1, maxy - miny + 1);
-      ImageIO.write(image, "PNG", new File("page-" + pageIndex +  ".png"));
+      Bounds ys;
+      try {
+        ys = getXs(height, sRow);
+      } catch (Exception e) {
+        ys = new Bounds(0, height);
+      }
+
+/*      int newHeight = xs.len * height / width + 1;
+      int diff = newHeight - ys.len;
+      if (diff >= 0) {
+        ys.minv -= diff / 2;
+        ys.len += diff;
+      } else {
+        int newWidth = ys.len * width / height + 1;
+        diff = newWidth - xs.len;
+        if (diff >= 0) {
+          xs.minv -= diff / 2;
+          xs.len += diff;
+        } else {
+          throw new RuntimeException("Can't scale output image");
+        }
+      }*/
+
+      System.out.println("Page " + pageIndex + " out of: " + pdfDocument.getNumberOfPages() +
+          " minx: " + xs.minv + " miny: " + ys.minv + " width: " + xs.len + " height: " + ys.len);
+      image = image.getSubimage(xs.minv, ys.minv, xs.len, ys.len);
+
+      PDPage currentPage = new PDPage(new PDRectangle(xs.len, ys.len));
+      croppedPdfDocument.addPage(currentPage);
+      PDPageContentStream pageContent = new PDPageContentStream(croppedPdfDocument, currentPage);
+      PDImageXObject imageXObject = LosslessFactory.createFromImage(croppedPdfDocument, image);
+      pageContent.drawImage(imageXObject, 0, 0);
+      pageContent.close();
     }
 
     pdfDocument.close();
+
+    croppedPdfDocument.save(new File("cropped_" + inputFilename));
+    croppedPdfDocument.close();
   }
 
   private static int[] getSRow(int width, int height, int[][] s) {
     final int COLUMN_PERCENTS = 1;
 
     int[] sRow = new int[height + 1];
-    for (int x = 0; x < height; x++) {
-      sRow[x + 1] = isWhite(s, x, 0, x, height - 1, COLUMN_PERCENTS) ? 0 : 1;
-      sRow[x + 1] += sRow[x];
+    for (int y = 0; y < height; y++) {
+      sRow[y + 1] = isWhite(s, 0, y, width - 1, y, COLUMN_PERCENTS) ? 0 : 1;
+      sRow[y + 1] += sRow[y];
     }
     return sRow;
   }
@@ -79,13 +126,13 @@ public class PdfCropper {
     return s;
   }
 
-  private static Pair getXs(int width, int[] sColumn) {
+  private static Bounds getXs(int width, int[] sColumn) {
     for (int columnPercents = 1; columnPercents <= 100; columnPercents++) {
       try {
         Pair xs = getXs(width, sColumn, columnPercents);
         xs.minv = Math.max(0, xs.minv - 20);
         xs.maxv = Math.min(width - 1, xs.maxv + 20);
-        return xs;
+        return new Bounds(xs.minv, xs.maxv - xs.minv + 1);
       } catch (Exception e) {
         // No operations.
       }
@@ -113,15 +160,19 @@ public class PdfCropper {
     return xs;
   }
 
+  static private class Bounds {
+    public int minv, len;
+    public Bounds(int minv, int len) {
+      this.minv = minv;
+      this.len = len;
+    }
+  };
+
   static private class Pair {
     public int minv, maxv;
     public Pair() {
       minv = Integer.MAX_VALUE;
       maxv = Integer.MIN_VALUE;
-    }
-    public void update(int v) {
-      minv = Math.min(minv, v);
-      maxv = Math.max(maxv, v);
     }
   };
 

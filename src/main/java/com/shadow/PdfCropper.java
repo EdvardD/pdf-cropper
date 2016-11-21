@@ -22,11 +22,11 @@ public class PdfCropper {
 
     PDDocument croppedPdfDocument = new PDDocument();
 
-//    final int[] badPages = { 26, 28, 29, 30, 32 };
-    final int[] badPages = { 28 };
-    for (int pageIndex = 0; pageIndex < pdfDocument.getNumberOfPages(); pageIndex++) {
-//    for (int i = 0; i < badPages.length; i++) {
-//      int pageIndex = badPages[i] - 1;
+    final int[] badPages = { 54, 85, 103, 150, 147 };
+//    final int[] badPages = { 103 };
+//    for (int pageIndex = 0; pageIndex < pdfDocument.getNumberOfPages(); pageIndex++) {
+    for (int i = 0; i < badPages.length; i++) {
+      int pageIndex = badPages[i] - 1;
       BufferedImage image = pdfRenderer.renderImage(pageIndex);
       printPage(image);
 
@@ -34,39 +34,25 @@ public class PdfCropper {
       int height = image.getHeight();
 
       int[][] s = getSs(image);
-      int[] sColumn = getSColumn(width, height, s);
-      int[] sRow = getSRow(width, height, s);
-      printColors(sColumn, "column_" + pageIndex + ".txt");
+      int[] columns = getSColumn(width, height, s);
+      int[] rows = getSRow(width, height, s);
+
+/*      normalize(columns, "column_" + pageIndex + ".txt");
+      normalize(rows, "row_" + pageIndex + ".txt");*/
 
       Bounds xs;
       try {
-        xs = getBoundsByString(width, sColumn);
+        xs = getBounds(columns);
       } catch (Exception e) {
         xs = new Bounds(0, width);
       }
 
       Bounds ys;
       try {
-        ys = getBoundsByString(height, sRow);
+        ys = getBounds(rows);
       } catch (Exception e) {
         ys = new Bounds(0, height);
       }
-
-/*      int newHeight = xs.len * height / width + 1;
-      int diff = newHeight - ys.len;
-      if (diff >= 0) {
-        ys.minv -= diff / 2;
-        ys.len += diff;
-      } else {
-        int newWidth = ys.len * width / height + 1;
-        diff = newWidth - xs.len;
-        if (diff >= 0) {
-          xs.minv -= diff / 2;
-          xs.len += diff;
-        } else {
-          throw new RuntimeException("Can't scale output image");
-        }
-      }*/
 
       System.out.println("Page " + pageIndex + " out of: " + pdfDocument.getNumberOfPages() +
           " minx: " + xs.minv + " miny: " + ys.minv + " width: " + xs.len + " height: " + ys.len);
@@ -86,10 +72,113 @@ public class PdfCropper {
     croppedPdfDocument.close();
   }
 
-  static private boolean isWhite(int[] s, int x1, int x2, int percents) {
-    int square = (x2 - x1 + 1);
-    int blackSquare = getSum(s, x1, x2);
-    return blackSquare * 100 < percents * square;
+/*  private static Bounds getBounds(int[] a) {
+    int cnt = 0;
+    Bounds result = new Bounds(0, a.length);
+    for (int i = 0, j = 0; i < a.length; i = j) {
+      while (j < a.length && a[j] == a[i]) j++;
+
+      if (a[i] == 1) {
+        cnt++;
+        int minv = i, maxv = j - 1;
+        minv = Math.max(0, minv - 20);
+        maxv = Math.min(a.length - 1, maxv + 20);
+        result = new Bounds(minv, maxv - minv + 1);
+      }
+    }
+    if (cnt != 1) {
+      throw new RuntimeException("Can't find xs bounds");
+    }
+    return result;
+  }*/
+
+  private static void normalize(int[] a, String filename) {
+    final int n = a.length;
+    PrintWriter fout;
+    try {
+      fout = new PrintWriter(filename);
+    } catch (Exception e) {
+      System.err.println("Can't write to file: " + filename);
+      return;
+    }
+    fout.println(getString(a));
+    while (true) {
+      int[] cnt = new int[n];
+      for (int i = 0, j = 0; i < n; i = j) {
+        while (j < n && a[j] == a[i]) {
+          j++;
+        }
+        for (int k = i; k < j; k++) {
+          cnt[k] = j - i;
+        }
+      }
+
+      int[] na = new int[n];
+      for (int i = 0, j = 0; i < n; i = j) {
+        while (j < n && a[j] == a[i]) {
+          j++;
+        }
+
+        int cur = 0;
+        if (i > 0) cur += cnt[i - 1];
+        if (j < n) cur += cnt[j];
+
+        boolean invert = j - i < cur;
+        if (a[i] == 0 && i == 0 || j == n) {
+          invert = false;
+        }
+
+        for (int k = i; k < j; k++) {
+          na[k] = a[k];
+          if (invert) {
+            na[k] ^= 1;
+          }
+        }
+      }
+
+      boolean finished = true;
+      for (int i = 0; i < n; i++) {
+        if (na[i] != a[i]) {
+          finished = false;
+          a[i] = na[i];
+        }
+      }
+      if (finished) {
+        break;
+      }
+      fout.println(getString(a));
+    }
+    try {
+      fout.close();
+    } catch (Exception e) {
+      System.err.println("Can't write to file: " + filename);
+    }
+  }
+
+  static private Bounds getBounds(int[] a) {
+    int n = a.length;
+    int[] s = new int[n + 1];
+    s[0] = 0;
+    for (int i = 0; i < n; i++) {
+      s[i + 1] = s[i] + (a[i] == 1 ? +1 : -1);
+    }
+
+    Bounds bounds = new Bounds(0, n);
+    int maxSum = s[n];
+
+    int minVal = 0;
+    int minPos = 0;
+    for (int i = 1; i <= n; i++) {
+      if (minVal > s[i]) {
+        minVal = s[i];
+        minPos = i;
+      }
+      if (s[i] - minVal > maxSum) {
+        maxSum = s[i] - minVal;
+        bounds = new Bounds(minPos, i - minPos);
+      }
+    }
+    return bounds;
   }
 
   static private boolean isWhite(int[][] s, int x1, int y1, int x2, int y2, int percents) {
@@ -100,22 +189,18 @@ public class PdfCropper {
 
   private static int[] getSRow(int width, int height, int[][] s) {
     final int COLUMN_PERCENTS = 1;
-
-    int[] sRow = new int[height + 1];
+    int[] sRow = new int[height];
     for (int y = 0; y < height; y++) {
-      sRow[y + 1] = isWhite(s, 0, y, width - 1, y, COLUMN_PERCENTS) ? 0 : 1;
-      sRow[y + 1] += sRow[y];
+      sRow[y] = isWhite(s, 0, y, width - 1, y, COLUMN_PERCENTS) ? 0 : 1;
     }
     return sRow;
   }
 
   private static int[] getSColumn(int width, int height, int[][] s) {
     final int COLUMN_PERCENTS = 1;
-
-    int[] sColumn = new int[width + 1];
+    int[] sColumn = new int[width];
     for (int x = 0; x < width; x++) {
-      sColumn[x + 1] = isWhite(s, x, 0, x, height - 1, COLUMN_PERCENTS) ? 0 : 1;
-      sColumn[x + 1] += sColumn[x];
+      sColumn[x] = isWhite(s, x, 0, x, height - 1, COLUMN_PERCENTS) ? 0 : 1;
     }
     return sColumn;
   }
@@ -131,53 +216,11 @@ public class PdfCropper {
     out.close();
   }
 
-  private static Bounds getBoundsByString(int width, int[] sColumn) {
-    for (int columnPercents = 1; columnPercents <= 100; columnPercents++) {
-      try {
-        Pair xs = getBoundsByStringInternal(width, sColumn, columnPercents);
-        xs.minv = Math.max(0, xs.minv - 20);
-        xs.maxv = Math.min(width - 1, xs.maxv + 20);
-        return new Bounds(xs.minv, xs.maxv - xs.minv + 1);
-      } catch (Exception e) {
-        // No operations.
-      }
-    }
-    throw new RuntimeException("Can't find xs bounds");
-  }
-
-  private static Pair getBoundsByStringInternal(int width, int[] s, int percents) throws Exception {
-    Pair xs = new Pair();
-    for (int x = width / 2; x >= 0; x--) {
-      if (getSum(s, x, x) == 0 && isWhite(s, 0, x, percents)) {
-        xs.minv = x;
-        break;
-      }
-    }
-    for (int x = width / 2; x < width; x++) {
-      if (getSum(s, x, x) == 0 && isWhite(s, x, width - 1, percents)) {
-        xs.maxv = x;
-        break;
-      }
-    }
-    if (xs.minv == Integer.MAX_VALUE || xs.maxv == Integer.MIN_VALUE) {
-      throw new Exception();
-    }
-    return xs;
-  }
-
   static private class Bounds {
     public int minv, len;
     public Bounds(int minv, int len) {
       this.minv = minv;
       this.len = len;
-    }
-  };
-
-  static private class Pair {
-    public int minv, maxv;
-    public Pair() {
-      minv = Integer.MAX_VALUE;
-      maxv = Integer.MIN_VALUE;
     }
   };
 
@@ -194,13 +237,6 @@ public class PdfCropper {
     return s;
   }
 
-  static private int getSum(int[] s, int x1, int x2) {
-    int ans = 0;
-    ans += s[x2 + 1];
-    ans -= s[x1];
-    return ans;
-  }
-
   static private int getSum(int[][] s, int x1, int y1, int x2, int y2) {
     int ans = 0;
     ans += s[x2 + 1][y2 + 1];
@@ -210,17 +246,11 @@ public class PdfCropper {
     return ans;
   }
 
-  private static void printColors(int[] s, String filename) {
+  private static String getString(int[] a) {
     String str = "";
-    for (int y = 0; y < s.length - 1; y++) {
-      str += getSum(s, y, y);
+    for (int y = 0; y < a.length; y++) {
+      str += a[y];
     }
-    try {
-      PrintWriter fout = new PrintWriter(filename);
-      fout.println(str);
-      fout.close();
-    } catch (Exception e) {
-      System.err.println("Can't write to file: " + filename);
-    }
+    return str;
   }
 }

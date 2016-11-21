@@ -22,11 +22,11 @@ public class PdfCropper {
 
     PDDocument croppedPdfDocument = new PDDocument();
 
-    final int[] badPages = { 54, 85, 103, 150, 147 };
+//    final int[] badPages = { 54, 85, 103, 150, 147 };
 //    final int[] badPages = { 103 };
-//    for (int pageIndex = 0; pageIndex < pdfDocument.getNumberOfPages(); pageIndex++) {
-    for (int i = 0; i < badPages.length; i++) {
-      int pageIndex = badPages[i] - 1;
+    for (int pageIndex = 0; pageIndex < pdfDocument.getNumberOfPages(); pageIndex++) {
+//    for (int i = 0; i < badPages.length; i++) {
+//      int pageIndex = badPages[i] - 1;
       BufferedImage image = pdfRenderer.renderImage(pageIndex);
       printPage(image);
 
@@ -36,9 +36,6 @@ public class PdfCropper {
       int[][] s = getSs(image);
       int[] columns = getSColumn(width, height, s);
       int[] rows = getSRow(width, height, s);
-
-/*      normalize(columns, "column_" + pageIndex + ".txt");
-      normalize(rows, "row_" + pageIndex + ".txt");*/
 
       Bounds xs;
       try {
@@ -72,89 +69,6 @@ public class PdfCropper {
     croppedPdfDocument.close();
   }
 
-/*  private static Bounds getBounds(int[] a) {
-    int cnt = 0;
-    Bounds result = new Bounds(0, a.length);
-    for (int i = 0, j = 0; i < a.length; i = j) {
-      while (j < a.length && a[j] == a[i]) j++;
-
-      if (a[i] == 1) {
-        cnt++;
-        int minv = i, maxv = j - 1;
-        minv = Math.max(0, minv - 20);
-        maxv = Math.min(a.length - 1, maxv + 20);
-        result = new Bounds(minv, maxv - minv + 1);
-      }
-    }
-    if (cnt != 1) {
-      throw new RuntimeException("Can't find xs bounds");
-    }
-    return result;
-  }*/
-
-  private static void normalize(int[] a, String filename) {
-    final int n = a.length;
-    PrintWriter fout;
-    try {
-      fout = new PrintWriter(filename);
-    } catch (Exception e) {
-      System.err.println("Can't write to file: " + filename);
-      return;
-    }
-    fout.println(getString(a));
-    while (true) {
-      int[] cnt = new int[n];
-      for (int i = 0, j = 0; i < n; i = j) {
-        while (j < n && a[j] == a[i]) {
-          j++;
-        }
-        for (int k = i; k < j; k++) {
-          cnt[k] = j - i;
-        }
-      }
-
-      int[] na = new int[n];
-      for (int i = 0, j = 0; i < n; i = j) {
-        while (j < n && a[j] == a[i]) {
-          j++;
-        }
-
-        int cur = 0;
-        if (i > 0) cur += cnt[i - 1];
-        if (j < n) cur += cnt[j];
-
-        boolean invert = j - i < cur;
-        if (a[i] == 0 && i == 0 || j == n) {
-          invert = false;
-        }
-
-        for (int k = i; k < j; k++) {
-          na[k] = a[k];
-          if (invert) {
-            na[k] ^= 1;
-          }
-        }
-      }
-
-      boolean finished = true;
-      for (int i = 0; i < n; i++) {
-        if (na[i] != a[i]) {
-          finished = false;
-          a[i] = na[i];
-        }
-      }
-      if (finished) {
-        break;
-      }
-      fout.println(getString(a));
-    }
-    try {
-      fout.close();
-    } catch (Exception e) {
-      System.err.println("Can't write to file: " + filename);
-    }
-  }
-
   static private Bounds getBounds(int[] a) {
     int n = a.length;
     int[] s = new int[n + 1];
@@ -163,7 +77,7 @@ public class PdfCropper {
       s[i + 1] = s[i] + (a[i] == 1 ? +1 : -1);
     }
 
-    Bounds bounds = new Bounds(0, n);
+    int minv = 0, maxv = n - 1;
     int maxSum = s[n];
 
     int minVal = 0;
@@ -175,10 +89,13 @@ public class PdfCropper {
       }
       if (s[i] - minVal > maxSum) {
         maxSum = s[i] - minVal;
-        bounds = new Bounds(minPos, i - minPos);
+        minv = minPos;
+        maxv = i - 1;
       }
     }
-    return bounds;
+    minv = Math.max(0, minv - 20);
+    maxv = Math.min(a.length - 1, maxv + 20);
+    return new Bounds(minv, maxv - minv + 1);
   }
 
   static private boolean isWhite(int[][] s, int x1, int y1, int x2, int y2, int percents) {
